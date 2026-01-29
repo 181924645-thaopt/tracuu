@@ -1,0 +1,361 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+   <title>Tra cứu câu hỏi học tập TVU & Tiện ích | tracuu.hugo.io.vn</title>
+  <meta name="description" content="Hệ thống tra cứu câu hỏi, tài liệu học tập theo môn học. Nhanh chóng, tiện lợi và miễn phí.">
+  <link rel="canonical" href="https://tracuu.hugo.io.vn/">
+  <meta name="robots" content="index, follow">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <link rel="icon" href="data:,">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+  <style>
+    body {
+      padding-top: 70px;
+    }
+    .answer-correct {
+      background-color: #d1e7dd; /* Bootstrap's success background color */
+      font-weight: 700;
+      color: #0f5132; /* Bootstrap's success text color */
+    }
+    .answer-img,
+    .question-img {
+      max-width: 100%;
+      height: auto;
+      max-height: 150px;
+      margin: 6px 0 6px 16px;
+      display: block;
+    }
+    .online-counter-box {
+      background-color: #e8f5e9;
+      color: #2e7d32;
+      border-left: 5px solid #4caf50;
+      padding: 10px 16px;
+      margin: 20px auto 10px;
+      border-radius: 6px;
+      max-width: 600px;
+      font-weight: 500;
+    }
+      /* Scrollable subject list styling for custom dropdown */
+      .subject-list {
+        max-height: 280px;
+        overflow-y: auto;
+        min-width: 100%;
+      }
+      .subject-list .form-control {
+        width: calc(100% - 4px);
+      }
+      .subject-list .dropdown-item {
+        white-space: normal;
+      }
+  </style>
+</head>
+<body class="bg-light">
+<header id="navbar-placeholder"></header>
+<div class="online-counter-box text-center">
+  🟢 Hiện có Bạn và <span id="online-counter">0</span> người nữa đang truy cập hệ thống.
+</div>
+
+<div class="container py-4">
+  <div class="card shadow-sm mb-4">
+    <div class="card-body">
+      <h5 class="card-title">🔍 Tra cứu câu hỏi</h5>
+      <form id="searchForm">
+        <div class="mb-3">
+          <label class="form-label" for="subjectDropdownBtn">Chọn môn học</label>
+          <div class="dropdown">
+            <button class="btn btn-outline-secondary dropdown-toggle w-100 text-start" type="button" id="subjectDropdownBtn" data-bs-toggle="dropdown" aria-expanded="false">
+              Chọn môn học
+            </button>
+            <ul class="dropdown-menu p-2 subject-list" id="subjectList" aria-labelledby="subjectDropdownBtn"></ul>
+          </div>
+          <input type="hidden" id="subjectIdInput" name="subjectId">
+        </div>
+        <div class="mb-3">
+          <label class="form-label" for="keywordInput">Từ khóa</label>
+          <input id="keywordInput" class="form-control" placeholder="Nhập từ khóa (để trống để tìm tất cả)">
+        </div>
+        <button type="submit" class="btn btn-success w-100">🔎 Tìm kiếm</button>
+      </form>
+    </div>
+  </div>
+
+  <div id="resultSection">
+    <div class="d-flex align-items-center justify-content-between mb-2">
+      <h6 class="mb-0">📋 Kết quả tìm thấy: <span id="resultCount">0</span></h6>
+      <div>
+        <button id="sortBtn" class="btn btn-outline-primary btn-sm" style="display:none;">Sắp xếp A → Z</button>
+      </div>
+    </div>
+    <div id="resultList"></div>
+  </div>
+</div>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import { getFirestore, collection, getDocs, query, where } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+  import { getDatabase, ref, onValue, onDisconnect, set, push } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyAjBMA-atKKvecY8CWeQXZsIQ3yHckZ92M",
+    authDomain: "tracuu-d3ee9.firebaseapp.com",
+    projectId: "tracuu-d3ee9",
+    storageBucket: "tracuu-d3ee9.appspot.com",
+    messagingSenderId: "593568604435",
+    appId: "1:593568604435:web:9a5145457a8ee734143ae6",
+    measurementId: "G-R0M6Y502NP"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+  const rtdb = getDatabase(app, "https://tracuu-d3ee9-default-rtdb.asia-southeast1.firebasedatabase.app");
+
+  const onlineCounterEl = document.getElementById('online-counter');
+  const connectionsRef = ref(rtdb, 'connections');
+  const myConnectionRef = push(connectionsRef);
+  onDisconnect(myConnectionRef).remove();
+  set(myConnectionRef, true);
+
+  onValue(connectionsRef, (snapshot) => {
+    let count = 0;
+    if (snapshot.exists() && typeof snapshot.val() === 'object') {
+      count = Object.keys(snapshot.val()).length;
+    }
+    onlineCounterEl.textContent = count;
+  });
+
+  const subjectDropdownBtn = document.getElementById("subjectDropdownBtn");
+  const subjectList = document.getElementById("subjectList");
+  const subjectIdInput = document.getElementById("subjectIdInput");
+  const searchForm = document.getElementById("searchForm");
+  const keywordInput = document.getElementById("keywordInput");
+  const resultList = document.getElementById("resultList");
+  const resultCount = document.getElementById("resultCount");
+  const sortBtn = document.getElementById("sortBtn");
+
+  // Lưu kết quả gần nhất để có thể sắp xếp lại khi toggle
+  let lastResults = [];
+  let sortAsc = true; // mặc định A → Z
+
+  async function loadSubjects() {
+    subjectList.innerHTML = "";
+    // Create filter input at top of dropdown
+    const filterLi = document.createElement('li');
+    const filterInput = document.createElement('input');
+    filterInput.type = 'text';
+    filterInput.id = 'subjectFilterInput';
+    filterInput.className = 'form-control mb-2';
+    filterInput.placeholder = 'Tìm tên môn...';
+    filterInput.setAttribute('aria-label', 'Tìm tên môn học');
+    filterLi.appendChild(filterInput);
+    subjectList.appendChild(filterLi);
+    const noResultLi = document.createElement('li');
+    noResultLi.className = 'px-2 text-muted';
+    noResultLi.style.display = 'none';
+    noResultLi.textContent = 'Không tìm thấy môn học.';
+    subjectList.appendChild(noResultLi);
+    const snapshot = await getDocs(collection(db, "mon_hoc"));
+    const subjects = [];
+    snapshot.forEach(doc => {
+      subjects.push({ id: doc.id, name: (doc.data().ten_mon || "").toString() });
+    });
+    subjects.sort((a, b) => a.name.localeCompare(b.name, 'vi', { sensitivity: 'base', numeric: true }));
+    subjects.forEach(s => {
+      const li = document.createElement('li');
+      li.dataset.name = s.name.toLowerCase();
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'dropdown-item';
+      btn.textContent = s.name;
+      btn.dataset.id = s.id;
+      btn.addEventListener('click', () => {
+        subjectIdInput.value = s.id;
+        subjectDropdownBtn.textContent = s.name;
+        // close dropdown
+        subjectDropdownBtn.click();
+      });
+      li.appendChild(btn);
+      subjectList.appendChild(li);
+    });
+
+    // Filter behavior
+    filterInput.addEventListener('input', () => {
+      const q = filterInput.value.trim().toLowerCase();
+      let visible = 0;
+      subjectList.querySelectorAll('li').forEach(li => {
+        if (!li.dataset.name) return; // skip filter/noresult li
+        if (li.dataset.name.indexOf(q) !== -1) {
+          li.style.display = '';
+          visible++;
+        } else {
+          li.style.display = 'none';
+        }
+      });
+      noResultLi.style.display = visible === 0 ? '' : 'none';
+    });
+
+    // Focus filter when dropdown shown
+    const dropdownParent = subjectDropdownBtn.closest('.dropdown');
+    if (dropdownParent) {
+      dropdownParent.addEventListener('shown.bs.dropdown', () => {
+        filterInput.focus();
+      });
+    }
+  }
+
+  function convertToThumbnail(url) {
+    if (!url) return "";
+    const regex = /drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/;
+    const match = url.match(regex);
+    if (match && match[1]) {
+        return `https://drive.google.com/thumbnail?id=${match[1]}`;
+    }
+    return url;
+  }
+
+  function renderQuestion(data) {
+    const card = document.createElement("div");
+    card.className = "card mb-3 shadow-sm";
+    const cardBody = document.createElement("div");
+    cardBody.className = "card-body";
+
+    const questionP = document.createElement("p");
+    questionP.className = "mb-2 fw-semibold";
+    questionP.innerHTML = "📌 " + data.noi_dung;
+    cardBody.appendChild(questionP);
+
+    if (data.noi_dung_img) {
+      const img = document.createElement("img");
+      img.src = convertToThumbnail(data.noi_dung_img);
+      img.className = "question-img";
+      img.alt = "Ảnh câu hỏi";
+      cardBody.appendChild(img);
+    }
+
+    const list = document.createElement("ul");
+    list.className = "list-group list-group-flush";
+    const choices = data.lua_chon || {};
+
+    for (const key of ["a", "b", "c", "d"]) {
+      if (choices[key]) {
+        const item = document.createElement("li");
+        item.className = "list-group-item";
+        let content = `${key.toUpperCase()}. ${choices[key]}`;
+        if (choices[key + "Img"]) {
+          content += `<br><img src="${convertToThumbnail(choices[key + "Img"])}" class="answer-img" alt="Ảnh đáp án ${key}">`;
+        }
+        if (key === data.dap_an_dung) {
+          item.classList.add("answer-correct");
+          content = `✅ ${content}`;
+        }
+        item.innerHTML = content;
+        list.appendChild(item);
+      }
+    }
+
+    cardBody.appendChild(list);
+    card.appendChild(cardBody);
+    return card;
+  }
+
+  // Hàm render lại danh sách từ mảng kết quả
+  function renderResults(results) {
+    resultList.innerHTML = "";
+    if (!results || results.length === 0) {
+      resultList.innerHTML = '<div class="text-muted">Không có kết quả.</div>';
+      return;
+    }
+    results.forEach(q => {
+      resultList.appendChild(renderQuestion(q));
+    });
+    // MathJax re-typeset
+    if (window.MathJax && window.MathJax.typesetPromise) {
+      window.MathJax.typesetPromise();
+    }
+  }
+
+  // Hàm trả về khóa so sánh (noi_dung) an toàn
+  function getCompareKey(q) {
+    // Nếu không có noi_dung, fallback sang một chuỗi rỗng để vẫn sắp xếp được
+    return (q.noi_dung || "").toString();
+  }
+
+  // Hàm sắp xếp mảng kết quả theo noi_dung
+  function sortResultsArray(arr, asc = true) {
+    arr.sort((a, b) => {
+      const ka = getCompareKey(a);
+      const kb = getCompareKey(b);
+      // Dùng localeCompare với locale 'vi' để xử lý dấu tiếng Việt phù hợp,
+      // sensitivity: 'base' sẽ coi 'a' và 'á' tương đương về mặt thứ tự cơ bản.
+      const cmp = ka.localeCompare(kb, 'vi', { sensitivity: 'base', numeric: true });
+      return asc ? cmp : -cmp;
+    });
+  }
+
+  searchForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    resultList.innerHTML = "Đang tải...";
+    resultCount.textContent = "0";
+
+    const subjectId = subjectIdInput.value;
+    const keyword = keywordInput.value.trim().toLowerCase();
+    const qCollection = collection(db, "cau_hoi");
+    const firestoreQuery = query(qCollection, where("mon_hoc_id", "==", subjectId));
+    const snapshot = await getDocs(firestoreQuery);
+    
+    // Thu thập kết quả vào mảng trước khi render
+    const results = [];
+    
+    snapshot.forEach(doc => {
+      const q = doc.data();
+      const matchKeyword =
+        !keyword ||
+        (q.noi_dung && q.noi_dung.toLowerCase().includes(keyword)) ||
+        (q.lua_chon && Object.values(q.lua_chon).some(val => typeof val === 'string' && val.toLowerCase().includes(keyword)));
+
+      if (matchKeyword) {
+        results.push(q);
+      }
+    });
+
+    // Lưu lại và sắp xếp (mặc định A -> Z)
+    lastResults = results;
+    sortAsc = true;
+    if (lastResults.length > 0) {
+      sortResultsArray(lastResults, sortAsc);
+    }
+
+    // Hiển thị nút sắp xếp nếu có kết quả
+    if (lastResults.length > 1) {
+      sortBtn.style.display = "inline-block";
+      sortBtn.textContent = sortAsc ? "Sắp xếp A → Z" : "Sắp xếp Z → A";
+    } else {
+      sortBtn.style.display = "none";
+    }
+
+    renderResults(lastResults);
+    resultCount.textContent = lastResults.length;
+  });
+
+  // Toggle sắp xếp khi nhấn nút
+  sortBtn.addEventListener("click", () => {
+    sortAsc = !sortAsc;
+    sortResultsArray(lastResults, sortAsc);
+    sortBtn.textContent = sortAsc ? "Sắp xếp A → Z" : "Sắp xếp Z → A";
+    renderResults(lastResults);
+  });
+
+  loadSubjects();
+</script>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+  fetch('/menu.html')
+    .then(response => response.text())
+    .then(data => {
+      document.getElementById('navbar-placeholder').innerHTML = data;
+    });
+  </script>
+</body>
+</html>

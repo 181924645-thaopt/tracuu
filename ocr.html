@@ -1,0 +1,504 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <title>🧠 Tra cứu câu hỏi bằng OCR + Excel + Nhập/Đọc Câu Hỏi</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+
+  <!-- Thư viện client-side -->
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+  <style>
+    .online-counter-box {
+      background-color: #e8f5e9;
+      color: #2e7d32;
+      border-left: 5px solid #4caf50;
+      padding: 10px 16px;
+      margin: 20px auto 10px;
+      border-radius: 6px;
+      max-width: 600px;
+      font-weight: 500;
+      text-align: center;
+    }
+    body { font-family: "Segoe UI", sans-serif; background: #f5f7fb; margin: 0; padding: 20px; padding-top: 70px; }
+    .container-card { background: white; border-radius: 14px; box-shadow: 0 3px 10px rgba(0,0,0,0.1); padding: 25px; max-width: 900px; margin: auto; }
+    h1 { text-align: center; color: #0078d7; margin-bottom: 30px; }
+    fieldset { border: 2px solid #0078d7; border-radius: 10px; margin-top: 15px; padding: 15px; }
+    legend { color: #0078d7; font-weight: bold; padding: 0 10px; }
+    textarea { width: 100%; height: 90px; border-radius: 8px; border: 1px solid #ccc; padding: 10px; }
+    button { background: #0078d7; color: white; border: none; border-radius: 8px; padding: 10px 16px; cursor: pointer; margin-top: 10px; }
+    button:hover { background: #005fa3; }
+    #output, #answer { background: #f1f1f1; padding: 15px; border-radius: 8px; margin-top: 10px; min-height: 50px; white-space: pre-wrap; }
+    #similarityBar { height: 12px; background: #ccc; border-radius: 10px; overflow: hidden; margin-top: 10px; }
+    #similarityFill { height: 100%; width: 0%; background: #0078d7; transition: width 0.4s; }
+  </style>
+</head>
+<body class="bg-light">
+  <header id="navbar-placeholder"></header>
+
+  <div class="online-counter-box">
+    🟢 Hiện có Bạn và <span id="online-counter">0</span> người nữa đang truy cập hệ thống.
+  </div>
+
+  <div class="container-card">
+    <h1>🧠 OCR + Excel + Nhập/Đọc Câu Hỏi</h1>
+
+    <fieldset>
+      <legend>1️⃣ Chọn Nguồn Dữ Liệu Đáp Án:</legend>
+      <div class="mb-2">
+        <label class="me-2"><input type="radio" name="dataSource" value="excel"> 📂 File Excel (.xlsx)</label>
+        <label class="me-2"><input type="radio" name="dataSource" value="firebase" checked> ☁️ CSDL Tra cứu HG</label>
+        <label><input type="radio" name="dataSource" value="text"> 📄 File Text (.txt)</label>
+      </div>
+
+      <div id="firebaseDataSourceArea" class="mb-2">
+        <select id="subjectSelect" class="form-select w-50 mb-2">
+          <option value="">-- Đang tải danh sách môn... --</option>
+        </select>
+        <button id="loadFirebaseBtn" class="btn btn-sm btn-outline-primary">⚡ Nạp dữ liệu CSDL</button>
+        <p id="firebaseStatus" class="mt-2">Chưa nạp dữ liệu CSDL.</p>
+      </div>
+
+      <div id="excelDataSourceArea" style="display:none;">
+        <input type="file" id="excelInput" accept=".xlsx" class="form-control w-50 d-inline-block">
+        <a href="template_excel.xlsx" download="Mau_template_Excel.xlsx" class="ms-2">📥 Tải file Excel mẫu</a>
+        <p id="excelStatus">Chưa tải file Excel.</p>
+      </div>
+
+      <div id="textDataSourceArea" style="display:none;">
+        <input type="file" id="textInput" accept=".txt" class="form-control w-50 d-inline-block">
+        <p id="textStatus">Chưa tải file Text (.txt).</p>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>2️⃣ Chọn cách nhập câu hỏi:</legend>
+      <div class="mb-2">
+        <label class="me-2"><input type="radio" name="inputMode" value="image" checked> 🖼️ Ảnh (OCR)</label>
+        <label class="me-2"><input type="radio" name="inputMode" value="text"> ✍️ Nhập văn bản</label>
+        <label><input type="radio" name="inputMode" value="voice"> 🎤 Đọc bằng giọng nói</label>
+      </div>
+
+      <div id="imageInputArea" class="mb-2">
+        <input type="file" id="imageInput" accept="image/*" class="form-control w-50">
+<div id="pasteZone"
+     tabindex="0"
+     style="border:2px dashed #22c55e;padding:14px;border-radius:10px;cursor:text;margin-top:10px;">
+  <b>📋 Dán ảnh tại đây</b> (Ctrl+V) hoặc kéo thả ảnh vào.
+  <div style="font-size:12px;color:#64748b;margin-top:6px;">
+    Gợi ý: Win+Shift+S → khoanh vùng → quay lại đây → Ctrl+V
+  </div>
+</div>
+
+<div style="margin-top:10px;display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap;">
+  <img id="previewImg"
+       style="max-width:280px;display:none;border:1px solid #e5e7eb;border-radius:8px;" />
+  <div id="pasteLog" style="font-size:12px;color:#64748b;"></div>
+</div>
+
+        <p id="imageStatus" class="mt-2">Chưa chọn ảnh.</p>
+      </div>
+
+
+      <div id="textInputArea" style="display:none;">
+        <textarea id="manualText" placeholder="Nhập câu hỏi tại đây..."></textarea>
+        <button id="searchTextBtn" class="btn btn-sm">🔍 Tra đáp án</button>
+      </div>
+
+      <div id="voiceInputArea" style="display:none;">
+        <button id="startVoice" class="btn btn-sm">🎙️ Bắt đầu nói</button>
+        <p id="voiceStatus" class="mt-2">Chưa nói gì...</p>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>📋 Câu hỏi nhận được:</legend>
+      <div id="output">Chưa nhận dạng.</div>
+    </fieldset>
+
+    <fieldset>
+      <legend>💡 Đáp án tìm được:</legend>
+      <div id="answer">Chưa có dữ liệu.</div>
+      <div id="similarityBar"><div id="similarityFill"></div></div>
+      <button id="speakBtn" disabled>🔊 Đọc đáp án</button>
+    </fieldset>
+  </div>
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+    import { getFirestore, collection, getDocs, query, where } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+    import { getDatabase, ref, push, onValue, onDisconnect, set } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+
+    document.addEventListener('DOMContentLoaded', () => {
+      const outputEl = document.getElementById("output");
+      const answerEl = document.getElementById("answer");
+      const imageStatusEl = document.getElementById("imageStatus");
+      const excelStatusEl = document.getElementById("excelStatus");
+      const firebaseStatusEl = document.getElementById("firebaseStatus");
+      const textStatusEl = document.getElementById("textStatus");
+      const similarityFill = document.getElementById("similarityFill");
+      const firebaseConfig = {
+        apiKey: "AIzaSyAjBMA-atKKvecY8CWeQXZsIQ3yHckZ92c",
+        authDomain: "tracuu-d3ee9.firebaseapp.com",
+        databaseURL: "https://tracuu-d3ee9-default-rtdb.asia-southeast1.firebasedatabase.app",
+        projectId: "tracuu-d3ee9",
+        storageBucket: "tracuu-d3ee9.appspot.com",
+        messagingSenderId: "593568604435",
+        appId: "1:593568604435:web:9a5145457a8ee734143ae6"
+      };
+
+      const app = initializeApp(firebaseConfig);
+      const db = getFirestore(app);
+      const rtdb = getDatabase(app, firebaseConfig.databaseURL);
+      (function initOnlineCounter() {
+        const onlineCounterEl = document.getElementById('online-counter');
+        if (!onlineCounterEl) return;
+        try {
+          const connectionsRef = ref(rtdb, 'connections');
+          const myConnectionRef = push(connectionsRef);
+          onDisconnect(myConnectionRef).remove().catch(() => {});
+          set(myConnectionRef, true).catch(() => {});
+          onValue(connectionsRef, snapshot => {
+            const val = snapshot.val ? snapshot.val() : (snapshot && snapshot.exists ? snapshot.exists() && snapshot.val() : null);
+            let count = 0;
+            try {
+              const v = snapshot.val();
+              if (!snapshot.exists()) count = 0;
+              else if (v && typeof v === 'object') count = Object.keys(v).length;
+              else count = 1;
+            } catch (e) {
+              count = 0;
+            }
+            onlineCounterEl.textContent = count;
+          }, err => {
+            console.error("onValue connections error", err);
+          });
+        } catch (err) {
+          console.error("Realtime counter init error", err);
+        }
+      })();
+      let excelData = [];
+      const normalize = s => (s || "").toLowerCase().replace(/\s+/g, " ").trim();
+
+      function escapeHtml(str) {
+        if (str === undefined || str === null) return "";
+        return String(str)
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#39;");
+      }
+      async function loadSubjects() {
+        const subjectSelect = document.getElementById("subjectSelect");
+        subjectSelect.innerHTML = '<option value="">-- Đang tải danh sách môn... --</option>';
+        try {
+          const snap = await getDocs(collection(db, "mon_hoc"));
+          if (!snap.empty) {
+            subjectSelect.innerHTML = '<option value="">-- Chọn môn học --</option>';
+            snap.forEach(doc => {
+              const opt = document.createElement('option');
+              opt.value = doc.id;
+              opt.textContent = doc.data().ten_mon || doc.id;
+              subjectSelect.appendChild(opt);
+            });
+          } else {
+            subjectSelect.innerHTML = '<option value="">-- Không tìm thấy môn học --</option>';
+          }
+        } catch (err) {
+          console.error("Lỗi loadSubjects:", err);
+          subjectSelect.innerHTML = '<option value="">-- Lỗi tải CSDL --</option>';
+        }
+      }
+      loadSubjects();
+      document.getElementById("loadFirebaseBtn").addEventListener("click", async () => {
+        const subjectKey = document.getElementById("subjectSelect").value;
+        if (!subjectKey) {
+          firebaseStatusEl.textContent = "⚠️ Vui lòng chọn một môn học.";
+          return;
+        }
+        firebaseStatusEl.textContent = "🔄 Đang tải dữ liệu...";
+        excelData = [];
+        try {
+          const q = query(collection(db, "cau_hoi"), where("mon_hoc_id", "==", subjectKey));
+          const snap = await getDocs(q);
+          if (!snap.empty) {
+            snap.forEach(doc => {
+              const d = doc.data();
+              const qtext = d.noi_dung || "";
+              let ans = "Không có đáp án";
+              if (d.lua_chon && d.dap_an_dung !== undefined && d.dap_an_dung !== null) {
+                const key = String(d.dap_an_dung);
+                if (key in d.lua_chon) ans = d.lua_chon[key];
+              }
+              excelData.push({ question: qtext + "", answer: ans + "" });
+            });
+            firebaseStatusEl.textContent = `✅ Đã nạp ${excelData.length} câu hỏi từ CSDL.`;
+          } else {
+            firebaseStatusEl.textContent = "⚠️ Không tìm thấy câu hỏi nào cho môn này.";
+          }
+        } catch (err) {
+          console.error("Lỗi tải câu hỏi:", err);
+          firebaseStatusEl.textContent = "❌ Lỗi khi tải dữ liệu CSDL.";
+        }
+      });
+      document.getElementById("excelInput").addEventListener("change", e => {
+        const file = e.target.files && e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = evt => {
+          try {
+            const data = evt.target.result;
+            // read as array buffer/safe
+            const wb = XLSX.read(data, { type: "array" });
+            const sheet = wb.Sheets[wb.SheetNames[0]];
+            const arr = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+            excelData = arr.map(row => {
+              const q = row.question || row.Question || row["Câu hỏi"] || row.noi_dung || "";
+              const a = row.answer || row.Answer || row["Đáp án"] || row.dap_an || row.dap_an_dung || "";
+              return { question: q + "", answer: a + "" };
+            }).filter(r => r.question);
+            excelStatusEl.textContent = `✅ Đã nạp ${excelData.length} câu hỏi từ Excel.`;
+          } catch (err) {
+            console.error("Lỗi đọc Excel:", err);
+            excelStatusEl.textContent = "❌ Lỗi khi đọc file Excel.";
+          }
+        };
+        reader.readAsArrayBuffer(file);
+      });
+      function parseTextData(text) {
+        const results = [];
+        const parts = text.split(/Câu hỏi[:：\s]/i);
+        for (let i = 1; i < parts.length; i++) {
+          const chunk = parts[i].trim();
+          const answerSplit = chunk.split(/Đáp án đúng[:：]/i);
+          if (answerSplit.length >= 2) {
+            const q = answerSplit[0].trim().replace(/\s+/g, ' ');
+            let a = answerSplit[1].trim();
+            a = a.split(/Câu hỏi[:：\s]/i)[0].trim();
+            if (q && a) results.push({ question: q, answer: a });
+          }
+        }
+        return results;
+      }
+
+      document.getElementById("textInput").addEventListener("change", e => {
+        const file = e.target.files && e.target.files[0];
+        if (!file) return;
+        textStatusEl.textContent = "🔄 Đang đọc file Text...";
+        const reader = new FileReader();
+        reader.onload = evt => {
+          try {
+            const txt = evt.target.result;
+            const parsed = parseTextData(txt);
+            excelData = parsed;
+            textStatusEl.textContent = `✅ Đã nạp ${parsed.length} câu hỏi từ Text.`;
+          } catch (err) {
+            console.error("Lỗi đọc text:", err);
+            textStatusEl.textContent = "❌ Lỗi khi đọc file .txt";
+          }
+        };
+        reader.onerror = () => { textStatusEl.textContent = "❌ Lỗi khi đọc file .txt"; };
+        reader.readAsText(file, "UTF-8");
+      });
+
+      document.getElementById("imageInput").addEventListener("change", async e => {
+        const file = e.target.files && e.target.files[0];
+        if (!file) return;
+        imageStatusEl.textContent = "🔍 Đang nhận dạng ảnh...";
+        outputEl.textContent = "";
+        answerEl.textContent = "";
+        similarityFill.style.width = "0%";
+        try {
+          const result = await Tesseract.recognize(file, "vie+eng", {
+            logger: m => { if (m.status === "recognizing text") imageStatusEl.textContent = `🧠 OCR: ${Math.round(m.progress * 100)}%`; }
+          });
+          const text = result?.data?.text?.trim() || "";
+          outputEl.textContent = text || "(Không nhận được chữ)";
+          imageStatusEl.textContent = "✅ Hoàn tất OCR.";
+          if (text) findAnswer(text);
+        } catch (err) {
+          console.error("Tesseract error:", err);
+          imageStatusEl.textContent = "❌ Lỗi khi OCR ảnh.";
+        }
+      });
+      document.getElementById("searchTextBtn").addEventListener("click", () => {
+        const txt = document.getElementById("manualText").value.trim();
+        if (!txt) return alert("Nhập câu hỏi trước!");
+        outputEl.textContent = txt;
+        findAnswer(txt);
+      });
+      let recognition = null;
+      const startVoiceBtn = document.getElementById("startVoice");
+      function initVoice() {
+        const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SpeechRec) {
+          document.getElementById("voiceStatus").textContent = "⚠️ Trình duyệt không hỗ trợ giọng nói.";
+          startVoiceBtn.disabled = true;
+          return;
+        }
+        recognition = new SpeechRec();
+        recognition.lang = "vi-VN";
+        recognition.interimResults = false;
+        recognition.continuous = false;
+        recognition.onresult = ev => {
+          const txt = ev.results[0][0].transcript;
+          document.getElementById("voiceStatus").textContent = "✅ Nghe được: " + txt;
+          outputEl.textContent = txt;
+          findAnswer(txt);
+        };
+        recognition.onend = () => document.getElementById("voiceStatus").textContent = "⏹️ Đã dừng ghi âm.";
+        startVoiceBtn.addEventListener("click", () => {
+          try {
+            recognition.start();
+            document.getElementById("voiceStatus").textContent = "🎙️ Đang nghe...";
+          } catch (err) { console.error("recognition start error", err); }
+        });
+      }
+      initVoice();
+
+      document.querySelectorAll('input[name="inputMode"]').forEach(r => {
+        r.addEventListener('change', () => {
+          document.getElementById("imageInputArea").style.display = r.value === "image" ? "block" : "none";
+          document.getElementById("textInputArea").style.display = r.value === "text" ? "block" : "none";
+          document.getElementById("voiceInputArea").style.display = r.value === "voice" ? "block" : "none";
+        });
+      });
+      document.querySelectorAll('input[name="dataSource"]').forEach(r => {
+        r.addEventListener('change', () => {
+          const val = r.value;
+          document.getElementById("firebaseDataSourceArea").style.display = val === "firebase" ? "block" : "none";
+          document.getElementById("excelDataSourceArea").style.display = val === "excel" ? "block" : "none";
+          document.getElementById("textDataSourceArea").style.display = val === "text" ? "block" : "none";
+          excelData = [];
+          firebaseStatusEl.textContent = "Chưa nạp dữ liệu CSDL.";
+          excelStatusEl.textContent = "Chưa tải file Excel.";
+          textStatusEl.textContent = "Chưa tải file Text (.txt).";
+          answerEl.textContent = "Chưa có dữ liệu.";
+          similarityFill.style.width = "0%";
+        });
+      });
+      function findAnswer(questionText) {
+        if (!excelData || excelData.length === 0) {
+          answerEl.textContent = "⚠️ Vui lòng tải file Excel hoặc nạp dữ liệu CSDL trước.";
+          similarityFill.style.width = "0%";
+          document.getElementById("speakBtn").disabled = true;
+          return;
+        }
+        const qNorm = normalize(questionText);
+        let best = { score: 0, ans: "" };
+
+        for (const row of excelData) {
+          const dbQ = normalize(row.question || "");
+          if (!dbQ) continue;
+          if (qNorm.includes(dbQ) || dbQ.includes(qNorm)) {
+            const score = dbQ.length;
+            if (score > best.score) best = { score, ans: row.answer || "" };
+          } else {
+            const qTokens = new Set(qNorm.split(/\s+/));
+            const dbTokens = dbQ.split(/\s+/);
+            let overlap = 0;
+            for (const t of dbTokens) if (qTokens.has(t)) overlap++;
+            if (overlap > best.score) best = { score: overlap, ans: row.answer || "" };
+          }
+        }
+
+        if (best.score > 0 && best.ans) {
+          answerEl.textContent = `✅ Khớp → ${best.ans}`;
+          const perc = Math.min(100, Math.round((best.score / 50) * 100));
+          similarityFill.style.width = perc + "%";
+          similarityFill.style.background = "#28a745";
+          document.getElementById("speakBtn").disabled = false;
+        } else {
+          answerEl.textContent = "❌ Không tìm thấy câu hỏi khớp trong CSDL.";
+          similarityFill.style.width = "0%";
+          similarityFill.style.background = "#dc3545";
+          document.getElementById("speakBtn").disabled = true;
+        }
+      }
+      document.getElementById("speakBtn").addEventListener("click", () => {
+        const txt = answerEl.textContent.replace(/^✅ Khớp →\s*/, "");
+        if (!txt) return;
+        const u = new SpeechSynthesisUtterance(txt);
+        u.lang = "vi-VN";
+        speechSynthesis.speak(u);
+      });
+      fetch('/menu.html').then(r => r.text()).then(html => {
+        document.getElementById('navbar-placeholder').innerHTML = html;
+      }).catch(() => {});
+    });
+  </script>
+  
+<script>
+(function () {
+  const pasteZone = document.getElementById('pasteZone');
+  const previewImg = document.getElementById('previewImg');
+  const pasteLog = document.getElementById('pasteLog');
+  const fileInput = document.getElementById('imageInput');
+
+  if (!pasteZone) return;
+
+  function log(msg) {
+    if (pasteLog) pasteLog.textContent = msg;
+  }
+
+  function setPreviewFromBlob(blob) {
+    const url = URL.createObjectURL(blob);
+    previewImg.src = url;
+    previewImg.style.display = 'block';
+  }
+
+  async function handleImageBlob(blob) {
+    setPreviewFromBlob(blob);
+    log(`✅ Đã nhận ảnh từ clipboard: ${(blob.size / 1024).toFixed(0)} KB`);
+
+    if (fileInput) {
+      const dt = new DataTransfer();
+      const file = new File([blob], `paste-${Date.now()}.png`, {
+        type: blob.type || 'image/png'
+      });
+      dt.items.add(file);
+      fileInput.files = dt.files;
+
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+      return;
+    }
+  }
+
+  pasteZone.addEventListener('click', () => pasteZone.focus());
+  pasteZone.addEventListener('paste', async (e) => {
+    const files = e.clipboardData?.files;
+    if (!files || files.length === 0) return;
+
+    const imgFile = Array.from(files).find(f => f.type && f.type.startsWith('image/'));
+    if (!imgFile) return;
+    e.preventDefault();
+    await handleImageBlob(imgFile);
+  });
+  pasteZone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    pasteZone.style.borderColor = '#16a34a';
+  });
+
+  pasteZone.addEventListener('dragleave', () => {
+    pasteZone.style.borderColor = '#22c55e';
+  });
+
+  pasteZone.addEventListener('drop', async (e) => {
+    e.preventDefault();
+    pasteZone.style.borderColor = '#22c55e';
+
+    const files = e.dataTransfer?.files;
+    const imgFile = files && Array.from(files).find(f => f.type.startsWith('image/'));
+    if (imgFile) await handleImageBlob(imgFile);
+  });
+
+  log('📌 Mẹo: Win+Shift+S → khoanh vùng → Ctrl+V vào đây');
+})();
+</script>
+
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
